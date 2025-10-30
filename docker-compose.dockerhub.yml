@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  # Backend API - Pull from Docker Hub
+  backend:
+    image: dajrl/c2eapi:backend-latest
+    container_name: chess2earn-backend
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - DB_TYPE=sqlite
+      - DB_PATH=./data/chess2earn.db
+      - JWT_SECRET=${JWT_SECRET:-chess2earn_super_secret_jwt_key_for_development_only_change_in_production_min_32_chars}
+      - EMAIL_SERVICE=gmail
+      - EMAIL_HOST=smtp.gmail.com
+      - EMAIL_PORT=587
+      - EMAIL_SECURE=false
+      - EMAIL_USER=${EMAIL_USER}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD}
+      - EMAIL_FROM=Chess2Earn <noreply@chess2earn.com>
+    volumes:
+      - backend-data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    networks:
+      - chess2earn-network
+    restart: unless-stopped
+
+  # Frontend (Next.js) - Pull from Docker Hub
+  frontend:
+    image: dajrl/c2eapi:frontend-latest
+    container_name: chess2earn-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://backend:3001/api
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - chess2earn-network
+    restart: unless-stopped
+
+  # Nginx reverse proxy (optional but recommended for production)
+  nginx:
+    image: nginx:alpine
+    container_name: chess2earn-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - chess2earn-network
+    restart: unless-stopped
+
+networks:
+  chess2earn-network:
+    driver: bridge
+
+volumes:
+  backend-data:
+    driver: local
